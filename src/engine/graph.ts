@@ -114,3 +114,20 @@ export function routeOf(file: string): { route?: string; role?: "page" | "layout
   const route = "/" + m[1].split("/").filter((s) => s && !/^\(.*\)$/.test(s)).join("/");
   return { route, role: m[2] === "route" ? "api" : (m[2] as "page" | "layout") };
 }
+
+/**
+ * Architecture layer of an area, top to bottom. Imports should point down this list;
+ * an import pointing up (logic importing UI, data importing logic) is a layering smell.
+ */
+export const LAYERS = ["Routes and API", "UI", "Logic", "Data", "Tests, config and other"] as const;
+
+export function layerOf(area: string): number {
+  const a = area.toLowerCase();
+  const last = a.split("/").pop() ?? a;
+  if (/(^|\/)(tests?|__tests__|e2e|spec|scripts|\.github|docs)(\/|$)/.test(a) || a === "(root)") return 4;
+  if (/(^|\/)(migrations?|db|database|prisma|drizzle|schema|supabase|sql)(\/|$)/.test(a)) return 3;
+  if (/^(src\/)?(app|pages|routes)(\/|$)/.test(a) || /(^|\/)(api|server\/routes|handlers)(\/|$)/.test(a)) return 0;
+  if (/^(src\/)?(components|hooks|ui|views|screens|widgets|styles)$/.test(a) || ["components", "hooks", "ui", "views"].includes(last)) return 1;
+  if (/^(landing|web|site|frontend|client|ios|android|mobile)$/.test(a)) return 0;
+  return 2;
+}

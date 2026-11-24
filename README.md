@@ -14,11 +14,12 @@
 ## Features
 
 - 🗺️ **Change map** — folders, changed files and the files that depend on them as one flowchart, with new imports in green and removed ones dashed in red
+- 🧭 **Scales to big PRs** — large changes open as folders in architecture layers (routes, UI, logic, data) with only changed imports; open any folder in place
 - 🔍 **Inside each file** — which functions, components and types were added, modified or removed, and whether an exported signature changed
 - 🧠 **Why it changed** — each change is linked to the prompt that caused it and the agent's own words before the edit, quoted from the transcript
 - 🐚 **Shell edits traced** — edits made through scripts (`python`, `sed`, heredocs) are attributed, and changes no agent edit explains are called out
 - 🎬 **Story mode** — step through the prompts in order with `j` / `k`; each step highlights the files it touched
-- 🔒 **Deterministic risk** — rule-based flags for changed contracts, new import cycles, first-time dependencies between folders, weakened tests, suppressions, new packages and sensitive paths
+- 🔒 **Deterministic risk** — rule-based flags for changed contracts, new import cycles, imports that point up the architecture layers, weakened tests, suppressions, new packages and sensitive paths
 - ↔️ **Before and after** — one fixed layout for both revisions, so nothing moves when you toggle
 
 ## Quick Start

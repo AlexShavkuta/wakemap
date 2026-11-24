@@ -47,6 +47,8 @@ export interface Hunk {
 export interface AreaNode {
   id: string;
   label: string;
+  /** Architecture layer, 0 = routes at the top, 4 = tests and config at the bottom. */
+  layer: number;
   totalFiles: number;
   changed: { added: number; modified: number; removed: number };
 }
@@ -100,6 +102,8 @@ export interface WakeMap {
   /** Pull request number, when the head is a GitHub merge commit. */
   pr?: string;
   generatedAt: string;
+  /** Names of the layers, indexed by AreaNode.layer. */
+  layers: string[];
   areas: AreaNode[];
   files: FileNode[];
   edges: Edge[];

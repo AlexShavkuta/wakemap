@@ -1,8 +1,9 @@
-import { Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Controls, MarkerType, Panel, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WakeMap } from "../../src/model.ts";
 import { FileInspector, Overview, StepInspector } from "./Inspector.tsx";
 import { layout, type Placed } from "./layout.ts";
+import { buildView, FOLDER_VIEW_THRESHOLD, type ImportsMode } from "./view.ts";
 import { edgeTypes } from "./edges.tsx";
 import { nodeTypes } from "./nodes.tsx";
 
@@ -15,7 +16,10 @@ export function App() {
   useEffect(() => {
     fetch("/wakemap.json")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${r.status}`))))
-      .then(setMap)
+      .then((m: WakeMap) =>
+        // maps written before layers existed: put everything in "Logic"
+        setMap({ ...m, layers: m.layers ?? ["Routes and API", "UI", "Logic", "Data", "Tests, config and other"], areas: m.areas.map((a) => ({ ...a, layer: a.layer ?? 2 })) }),
+      )
       .catch((e) => setError(String(e)));
   }, []);
   if (error)
@@ -38,94 +42,31 @@ export function App() {
 }
 
 function Shell({ map }: { map: WakeMap }) {
+  const changed = map.files.filter((f) => !f.context);
+  const big = changed.length > FOLDER_VIEW_THRESHOLD;
   const [placed, setPlaced] = useState<Placed | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [step, setStep] = useState(0); // 0 = all changes
   const [view, setView] = useState<View>("after");
+  // big changes open as folders with only changed imports; small ones open fully
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(big ? [] : map.areas.map((a) => a.id)));
+  const [imports, setImports] = useState<ImportsMode>(big ? "changed" : "all");
+  const [far, setFar] = useState(false);
   const flow = useReactFlow();
-
-  useEffect(() => {
-    layout(map).then(setPlaced);
-  }, [map]);
+  const pendingFrame = useRef<string[] | null | undefined>(undefined);
 
   const byId = useMemo(() => new Map(map.files.map((f) => [f.id, f])), [map]);
-  const changed = map.files.filter((f) => !f.context);
   const unit = step > 0 ? map.units[step - 1] : null;
+  const stepFiles = useMemo(() => (unit ? new Set(unit.files.filter((f) => byId.has(f))) : null), [unit, byId]);
+  const vm = useMemo(() => buildView(map, { expanded, imports, stepFiles }), [map, expanded, imports, stepFiles]);
 
-  // what is in focus: a story step's files, or the selected file and its neighbours
-  const focus = useMemo(() => {
-    if (selected) {
-      const s = new Set([selected]);
-      for (const e of map.edges) {
-        if (e.source === selected) s.add(e.target);
-        if (e.target === selected) s.add(e.source);
-      }
-      return s;
-    }
-    if (unit) return new Set(unit.files);
-    return null;
-  }, [selected, unit, map.edges]);
-
-  const nodes: Node[] = useMemo(() => {
-    if (!placed) return [];
-    const areaNodes: Node[] = placed.areas.map((a) => ({
-      id: `area:${a.id}`,
-      type: "area",
-      position: { x: a.x, y: a.y },
-      width: a.w,
-      height: a.h,
-      data: { area: map.areas.find((x) => x.id === a.id)! },
-      selectable: false,
-      draggable: false,
-      focusable: false,
-      zIndex: 0,
-    }));
-    const fileNodes: Node[] = [];
-    for (const [id, p] of placed.files) {
-      const f = byId.get(id)!;
-      const ghost = view === "after" ? f.status === "removed" : f.status === "added";
-      fileNodes.push({
-        id,
-        type: "file",
-        parentId: `area:${p.parent}`,
-        position: { x: p.x, y: p.y },
-        width: p.w,
-        height: p.h,
-        draggable: false,
-        zIndex: 2,
-        className: focus && !focus.has(id) ? "is-dim" : undefined,
-        data: { file: f, ghost, selected: selected === id, steps: f.unitIds.map((u) => Number(u.slice(1))).sort((a, b) => a - b), currentStep: step },
-      });
-    }
-    return [...areaNodes, ...fileNodes];
-  }, [placed, map, byId, view, focus, selected, step]);
-
-  const edges: Edge[] = useMemo(
-    () =>
-      map.edges.map((e) => {
-        const hidden = (view === "after" && e.status === "removed") || (view === "before" && e.status === "added");
-        const touchesFocus = focus ? focus.has(e.source) && focus.has(e.target) : true;
-        const color = e.status === "added" ? "var(--added)" : e.status === "removed" ? "var(--removed)" : selected && touchesFocus ? "var(--foreground)" : "var(--border-strong)";
-        return {
-          id: e.id,
-          type: "routed",
-          data: { points: placed?.routes.get(e.id) },
-          source: e.source,
-          target: e.target,
-          hidden,
-          className: focus && !touchesFocus ? "is-dim" : undefined,
-          style: {
-            stroke: color,
-            strokeWidth: e.status === "unchanged" ? 1 : 1.75,
-            strokeDasharray: e.status === "removed" ? "5 4" : undefined,
-          },
-          markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
-          zIndex: 1,
-          focusable: false,
-        };
-      }),
-    [map.edges, view, focus, selected, placed],
-  );
+  useEffect(() => {
+    let live = true;
+    layout(vm).then((p) => live && setPlaced(p));
+    return () => {
+      live = false;
+    };
+  }, [vm]);
 
   const frame = useCallback(
     (ids: string[] | null) => {
@@ -136,22 +77,162 @@ function Shell({ map }: { map: WakeMap }) {
     [flow],
   );
 
+  // after a re-layout, move the camera to whatever asked for it
+  useEffect(() => {
+    if (pendingFrame.current === undefined || !placed) return;
+    const ids = pendingFrame.current;
+    pendingFrame.current = undefined;
+    setTimeout(() => frame(ids), 0);
+  }, [placed, frame]);
+
+  const shownAs = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of vm.areas) for (const f of a.all) m.set(f.id, a.collapsed ? `area:${a.area.id}` : f.id);
+    return m;
+  }, [vm]);
+
+  const toggleArea = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    pendingFrame.current = [`area:${id}`];
+  }, []);
+
+  // in focus: the selected file and its direct neighbours
+  const focus = useMemo(() => {
+    if (!selected) return null;
+    const s = new Set([selected]);
+    for (const e of map.edges) {
+      if (e.source === selected) s.add(shownAs.get(e.target) ?? e.target);
+      if (e.target === selected) s.add(shownAs.get(e.source) ?? e.source);
+    }
+    return s;
+  }, [selected, map.edges, shownAs]);
+
+  const nodes: Node[] = useMemo(() => {
+    if (!placed) return [];
+    const out: Node[] = placed.bands.map((b) => ({
+      id: `band:${b.layer}`,
+      type: "band",
+      position: { x: b.x, y: b.y },
+      width: b.w,
+      height: b.h,
+      data: { label: map.layers[b.layer] },
+      selectable: false,
+      draggable: false,
+      focusable: false,
+      zIndex: -1,
+    }));
+    for (const a of vm.areas) {
+      const box = placed.areas.get(a.area.id);
+      if (!box) continue;
+      const id = `area:${a.area.id}`;
+      const steps = [...new Set(a.all.flatMap((f) => f.unitIds.map((u) => Number(u.slice(1)))))].sort((x, y) => x - y);
+      out.push({
+        id,
+        type: a.collapsed ? "folder" : "area",
+        position: { x: box.x, y: box.y },
+        width: box.w,
+        height: box.h,
+        data: { area: a.area, files: a.all, steps, currentStep: step, onToggle: () => toggleArea(a.area.id), canCollapse: !(stepFiles && stepFiles.size <= FOLDER_VIEW_THRESHOLD) },
+        selectable: false,
+        draggable: false,
+        focusable: false,
+        className: focus && a.collapsed && !focus.has(id) ? "is-dim" : undefined,
+        zIndex: a.collapsed ? 2 : 0,
+      });
+    }
+    for (const [id, p] of placed.files) {
+      const f = byId.get(id)!;
+      const ghost = view === "after" ? f.status === "removed" : f.status === "added";
+      out.push({
+        id,
+        type: "file",
+        parentId: `area:${p.parent}`,
+        position: { x: p.x, y: p.y },
+        width: p.w,
+        height: p.h,
+        draggable: false,
+        zIndex: 2,
+        className: focus && !focus.has(id) ? "is-dim" : undefined,
+        data: { file: f, ghost, selected: selected === id, steps: f.unitIds.map((u) => Number(u.slice(1))).sort((x, y) => x - y), currentStep: step },
+      });
+    }
+    return out;
+  }, [placed, vm, map.layers, byId, view, focus, selected, step, stepFiles, toggleArea]);
+
+  const edges: Edge[] = useMemo(() => {
+    if (!placed) return [];
+    const list = [...vm.edges];
+    // with changed-only imports, a selected file still shows all of its own imports
+    if (selected && imports === "changed") {
+      for (const e of map.edges) {
+        if (e.status !== "unchanged" || (e.source !== selected && e.target !== selected)) continue;
+        const s = shownAs.get(e.source);
+        const t = shownAs.get(e.target);
+        if (s && t && s !== t && !list.some((x) => x.id === `${s}->${t}`)) list.push({ id: `${s}->${t}`, source: s, target: t, status: "unchanged", count: 1 });
+      }
+    }
+    return list.map((e) => {
+      const hidden = (view === "after" && e.status === "removed") || (view === "before" && e.status === "added");
+      const touchesFocus = focus ? focus.has(e.source) && focus.has(e.target) : true;
+      const color = e.status === "added" ? "var(--added)" : e.status === "removed" ? "var(--removed)" : selected && touchesFocus ? "var(--foreground)" : "var(--border-strong)";
+      return {
+        id: e.id,
+        type: "routed",
+        data: { points: placed.routes.get(e.id) },
+        source: e.source,
+        target: e.target,
+        hidden,
+        label: e.count > 1 ? String(e.count) : undefined,
+        className: focus && !touchesFocus ? "is-dim" : undefined,
+        style: {
+          stroke: color,
+          strokeWidth: e.status === "unchanged" ? 1 : Math.min(1.75 + (e.count - 1) * 0.5, 4),
+          strokeDasharray: e.status === "removed" ? "5 4" : undefined,
+        },
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
+        zIndex: 1,
+        focusable: false,
+      };
+    });
+  }, [placed, vm.edges, map.edges, imports, view, focus, selected, shownAs]);
+
   const goStep = useCallback(
     (n: number) => {
       const next = Math.max(0, Math.min(map.units.length, n));
       setStep(next);
       setSelected(null);
-      frame(next > 0 ? map.units[next - 1].files.filter((f) => byId.has(f)) : null);
+      if (big) setExpanded(new Set());
+      pendingFrame.current = null;
     },
-    [map.units, byId, frame],
+    [map.units, big],
   );
 
   const pick = useCallback(
     (id: string | null) => {
       setSelected(id);
-      if (id) frame([id]);
+      if (!id) return;
+      const f = byId.get(id);
+      // opening a file inside a closed folder opens the folder first
+      if (f && shownAs.get(id) !== id) {
+        if (stepFiles && !stepFiles.has(id)) setStep(0);
+        setExpanded((prev) => new Set(prev).add(f.area));
+        pendingFrame.current = [id];
+      } else frame([id]);
     },
-    [frame],
+    [frame, byId, shownAs, stepFiles],
+  );
+
+  const setAll = useCallback(
+    (open: boolean) => {
+      setExpanded(new Set(open ? map.areas.map((a) => a.id) : []));
+      pendingFrame.current = null;
+    },
+    [map.areas],
   );
 
   useEffect(() => {
@@ -164,6 +245,9 @@ function Shell({ map }: { map: WakeMap }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [goStep, step]);
+
+  const allOpen = vm.areas.every((a) => !a.collapsed);
+  const allClosed = vm.areas.every((a) => a.collapsed);
 
   const counts = {
     added: changed.filter((f) => f.status === "added").length,
@@ -232,18 +316,7 @@ function Shell({ map }: { map: WakeMap }) {
             </li>
           ))}
         </ol>
-        {map.unattributed.length > 0 && (
-          <div className="rail-note">
-            Changed without a recorded agent edit
-            <ul>
-              {map.unattributed.map((f) => (
-                <li key={f}>
-                  <button onClick={() => pick(f)}>{f}</button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {map.unattributed.length > 0 && <Unattributed files={map.unattributed} onPick={pick} />}
         {map.units.length === 0 && <div className="rail-note">No Claude Code session on this machine edited these files.</div>}
       </nav>
 
@@ -254,7 +327,12 @@ function Shell({ map }: { map: WakeMap }) {
           edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          onNodeClick={(_, n) => n.type === "file" && pick(selected === n.id ? null : n.id)}
+          onNodeClick={(_, n) => {
+            if (n.type === "file") pick(selected === n.id ? null : n.id);
+            else if (n.type === "folder") toggleArea(n.id.slice(5));
+          }}
+          onMove={(_, vp) => setFar(vp.zoom < 0.55)}
+          className={far ? "is-far" : undefined}
           onPaneClick={() => setSelected(null)}
           nodesConnectable={false}
           elementsSelectable={false}
@@ -265,6 +343,19 @@ function Shell({ map }: { map: WakeMap }) {
           proOptions={{ hideAttribution: true }}
         >
           <Controls showInteractive={false} position="bottom-left" />
+          <Panel position="top-left" className="canvas-bar">
+            {!(stepFiles && stepFiles.size <= FOLDER_VIEW_THRESHOLD) && (
+              <div className="toggle" role="group" aria-label="Detail">
+                <button aria-pressed={allClosed} onClick={() => setAll(false)}>Folders</button>
+                <button aria-pressed={allOpen} onClick={() => setAll(true)}>Files</button>
+              </div>
+            )}
+            <div className="toggle" role="group" aria-label="Imports shown">
+              <button aria-pressed={imports === "changed"} onClick={() => setImports("changed")}>Changed imports</button>
+              <button aria-pressed={imports === "all"} onClick={() => setImports("all")}>All imports</button>
+            </div>
+            {stepFiles && <span className="canvas-bar__note">Showing step {step} only · <button className="linkish" onClick={() => goStep(0)}>Show all</button></span>}
+          </Panel>
         </ReactFlow>
         ) : (
           <div className="state">Laying out the map…</div>
@@ -280,6 +371,45 @@ function Shell({ map }: { map: WakeMap }) {
           <Overview map={map} onPick={pick} />
         )}
       </aside>
+    </div>
+  );
+}
+
+/** Files changed off the record, grouped by folder so 12 generated JSON files read as one line. */
+function Unattributed({ files, onPick }: { files: string[]; onPick: (id: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const groups = new Map<string, string[]>();
+  for (const f of files) {
+    const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "(root)";
+    groups.set(dir, [...(groups.get(dir) ?? []), f]);
+  }
+  return (
+    <div className="rail-note">
+      Changed without a recorded agent edit
+      <ul>
+        {[...groups].map(([dir, fs]) =>
+          fs.length === 1 ? (
+            <li key={dir}>
+              <button onClick={() => onPick(fs[0])}>{fs[0]}</button>
+            </li>
+          ) : (
+            <li key={dir}>
+              <button aria-expanded={open === dir} onClick={() => setOpen(open === dir ? null : dir)}>
+                {dir}/ · {fs.length} files
+              </button>
+              {open === dir && (
+                <ul className="rail-note__sub">
+                  {fs.map((f) => (
+                    <li key={f}>
+                      <button onClick={() => onPick(f)}>{f.slice(dir.length + 1)}</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ),
+        )}
+      </ul>
     </div>
   );
 }

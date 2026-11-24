@@ -21,7 +21,9 @@ Read this before touching `viewer/`. Rules here are decisions, each with a reaso
 Three columns on desktop: story rail (280px) · canvas · inspector (400px). Below 760px it stacks: canvas (45vh), inspector, story.
 
 - **Story rail:** the prompts in order. Numbering is real here because order matters. Each step shows the files it touched and its flag count.
-- **Canvas:** folders as grey areas; files inside. Imports flow top to bottom (an importer sits above what it imports), because the canvas is taller than it is wide.
+- **Canvas:** folders sit in horizontal bands by architecture layer: routes and API, UI, logic, data, then tests and config. Imports flow top to bottom, so an arrow pointing up is a layering smell you see without reading anything.
+- **Levels of detail:** a change with more than 10 changed files opens as closed folders (counts, worst risk, steps) with only changed imports drawn. Clicking a folder opens it in place. Small changes open at file level with all imports. Zoomed far out, file boxes drop their symbol lists.
+- **Story steps isolate:** a step hides every file it did not touch. Steps with more than 10 files start as folders too.
 - **Inspector:** the overview (verdict, "Look here first", the key to the map), a story step, or one file.
 
 ## Encoding
@@ -34,6 +36,9 @@ Three columns on desktop: story rail (280px) · canvas · inspector (400px). Bel
 | Unchanged file that depends on the change | no fill, quiet text, solid border |
 | New import | green line |
 | Removed import | red dashed line |
+| Closed folder | white box, change counts, worst risk flag, "Open n files" |
+| Bundled import between folders | line thickness and a small count near the arrow |
+| Architecture layer | a thin rule and a label at the top of each band |
 | Steps that changed a file | `1 · 4` in mono at the top right of the node; the current step is accent blue |
 | Risk | dot (red high, amber warn, grey info) plus the message |
 
@@ -95,3 +100,10 @@ Weights are 400 and 500 only.
   - Made dashed mean only "removed".
   - Warning text is ink, not amber.
   - The header shows the PR title, not the merge-commit subject.
+- **2026-11-24** Large changes (PR #54, 31 files) were a hairball. Added:
+  - folder level by default above 10 changed files;
+  - changed imports only by default, with a toggle;
+  - architecture layer bands and a rule for imports that point up the layers;
+  - story steps that hide other files;
+  - symbol lists hidden when zoomed far out.
+  Unexplained edits to data and content files are now "info" rather than "warn", and they're grouped by folder in the rail.
