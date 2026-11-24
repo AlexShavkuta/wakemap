@@ -371,7 +371,11 @@ export function analyze(opts: AnalyzeOptions): WakeMap {
 
   const flags: RiskFlag[] = files.flatMap((f) => f.risk);
   const risk = { ...scoreRisk(flags, 0), flags };
-  const title = git.run(["log", "-1", "--format=%s", headSha]).trim();
+  // A merge commit's subject ("Merge pull request #39 from ...") says nothing; use the branch tip's subject.
+  const [subject, ...parents] = git.run(["log", "-1", "--format=%s%n%P", headSha]).trim().split("\n");
+  const parentList = (parents[0] ?? "").split(" ").filter(Boolean);
+  const branch = subject.match(/^Merge (?:pull request #\d+ from [^/\s]+\/|branch ')([^'\s]+)/)?.[1];
+  const title = parentList.length > 1 ? git.run(["log", "-1", "--format=%s", parentList[1]]).trim() : subject;
 
   return {
     version: 1,
@@ -379,6 +383,8 @@ export function analyze(opts: AnalyzeOptions): WakeMap {
     base: { ref: opts.base, sha: baseSha },
     head: { ref: opts.head, sha: headSha },
     title,
+    branch: branch ?? (opts.head !== "HEAD" && !/^[0-9a-f]{7,40}(\^\d*)?$/.test(opts.head) ? opts.head : undefined),
+    pr: subject.match(/^Merge pull request #(\d+)/)?.[1],
     generatedAt: new Date().toISOString(),
     areas,
     files,

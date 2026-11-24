@@ -1,4 +1,4 @@
-import { Background, BackgroundVariant, Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node } from "@xyflow/react";
+import { Controls, MarkerType, ReactFlow, ReactFlowProvider, useReactFlow, type Edge, type Node } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { WakeMap } from "../../src/model.ts";
 import { FileInspector, Overview, StepInspector } from "./Inspector.tsx";
@@ -94,11 +94,11 @@ function Shell({ map }: { map: WakeMap }) {
         draggable: false,
         zIndex: 2,
         className: focus && !focus.has(id) ? "is-dim" : undefined,
-        data: { file: f, ghost, selected: selected === id },
+        data: { file: f, ghost, selected: selected === id, steps: f.unitIds.map((u) => Number(u.slice(1))).sort((a, b) => a - b), currentStep: step },
       });
     }
     return [...areaNodes, ...fileNodes];
-  }, [placed, map, byId, view, focus, selected]);
+  }, [placed, map, byId, view, focus, selected, step]);
 
   const edges: Edge[] = useMemo(
     () =>
@@ -113,11 +113,10 @@ function Shell({ map }: { map: WakeMap }) {
           source: e.source,
           target: e.target,
           hidden,
-          animated: e.status === "added" && view === "after",
           className: focus && !touchesFocus ? "is-dim" : undefined,
           style: {
             stroke: color,
-            strokeWidth: e.status === "unchanged" ? 1.25 : 2,
+            strokeWidth: e.status === "unchanged" ? 1 : 1.75,
             strokeDasharray: e.status === "removed" ? "5 4" : undefined,
           },
           markerEnd: { type: MarkerType.ArrowClosed, color, width: 14, height: 14 },
@@ -131,7 +130,7 @@ function Shell({ map }: { map: WakeMap }) {
   const frame = useCallback(
     (ids: string[] | null) => {
       requestAnimationFrame(() =>
-        flow.fitView({ nodes: ids ? ids.map((id) => ({ id })) : undefined, duration: 200, padding: ids ? 0.35 : 0.08, maxZoom: 1.1 }),
+        flow.fitView({ nodes: ids ? ids.map((id) => ({ id })) : undefined, duration: 200, padding: ids ? "64px" : "32px", maxZoom: 1.1 }),
       );
     },
     [flow],
@@ -178,14 +177,16 @@ function Shell({ map }: { map: WakeMap }) {
       <header className="topbar">
         <span className="wordmark">wakemap</span>
         <span className="topbar__title" title={map.title}>{map.title}</span>
-        <span className="topbar__range mono">
-          {map.base.sha.slice(0, 7)} → {map.head.sha.slice(0, 7)}
+        <span className="topbar__range">
+          {map.pr && <span>PR #{map.pr} · </span>}
+          {map.branch && <span className="mono">{map.branch}</span>}
+          {!map.branch && <span className="mono">{map.base.sha.slice(0, 7)} → {map.head.sha.slice(0, 7)}</span>}
         </span>
         <span className="topbar__spacer" />
         <span className="counts" aria-label="Changed files">
-          <span><b className="c-added">{counts.added}</b> added</span>
-          <span><b className="c-modified">{counts.modified}</b> modified</span>
-          <span><b className="c-removed">{counts.removed}</b> removed</span>
+          {counts.added > 0 && <span><b className="c-added">{counts.added}</b> added</span>}
+          {counts.modified > 0 && <span><b className="c-modified">{counts.modified}</b> modified</span>}
+          {counts.removed > 0 && <span><b className="c-removed">{counts.removed}</b> removed</span>}
         </span>
         <div className="toggle" role="group" aria-label="Show the code">
           <button aria-pressed={view === "before"} onClick={() => setView("before")}>Before</button>
@@ -219,7 +220,12 @@ function Shell({ map }: { map: WakeMap }) {
                 <span>
                   <span className="step__prompt">{u.prompt}</span>
                   <span className="step__meta">
-                    {u.files.length} file{u.files.length === 1 ? "" : "s"} · {new Date(u.promptAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                    <span className="step__files">{u.files.map((f) => f.split("/").pop()).slice(0, 2).join(", ")}</span>
+                    {u.files.length > 2 ? ` +${u.files.length - 2}` : ""}
+                    {(() => {
+                      const n = u.files.reduce((c, id) => c + (byId.get(id)?.risk.length ?? 0), 0);
+                      return n ? ` · ${n} flag${n === 1 ? "" : "s"}` : "";
+                    })()}
                   </span>
                 </span>
               </button>
@@ -253,12 +259,11 @@ function Shell({ map }: { map: WakeMap }) {
           nodesConnectable={false}
           elementsSelectable={false}
           fitView
-          fitViewOptions={{ padding: 0.08, maxZoom: 1.1 }}
+          fitViewOptions={{ padding: "32px", maxZoom: 1.1 }}
           minZoom={0.15}
           maxZoom={2}
           proOptions={{ hideAttribution: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
           <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
         ) : (

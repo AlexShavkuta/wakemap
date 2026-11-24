@@ -180,35 +180,66 @@ export function FileInspector({ map, file, onPick }: { map: WakeMap; file: FileN
   );
 }
 
+const LEVEL_RANK = { high: 0, warn: 1, info: 2 } as const;
+
+/** Changed files in the order a reviewer should open them: worst flag first, then size. */
+export function reviewOrder(map: WakeMap): FileNode[] {
+  const worst = (f: FileNode) => Math.min(3, ...f.risk.map((r) => LEVEL_RANK[r.level]));
+  return map.files
+    .filter((f) => !f.context)
+    .sort((a, b) => worst(a) - worst(b) || b.risk.length - a.risk.length || b.linesAdded + b.linesRemoved - (a.linesAdded + a.linesRemoved));
+}
+
 export function Overview({ map, onPick }: { map: WakeMap; onPick: (id: string) => void }) {
+  const files = reviewOrder(map);
   return (
     <div className="ins">
       <div>
-        <div className="band">
+        <div className="verdict">
           <span className={`dot dot--${map.risk.band}`} />
-          <span className="ins__path" style={{ fontFamily: "var(--font-sans)" }}>{BAND_TEXT[map.risk.band]}</span>
+          {BAND_TEXT[map.risk.band]}
         </div>
         <p className="overview__lead">{BAND_HINT[map.risk.band]}</p>
       </div>
       <section className="sec">
-        <h2 className="sec__title">Risk flags</h2>
-        <Flags flags={map.risk.flags} onPick={onPick} />
+        <h2 className="sec__title">Look here first</h2>
+        <ol className="queue">
+          {files.map((f) => {
+            const top = [...f.risk].sort((a, b) => LEVEL_RANK[a.level] - LEVEL_RANK[b.level])[0];
+            return (
+              <li key={f.id}>
+                <button className="queue__item" onClick={() => onPick(f.id)}>
+                  <span className={`sym__mark c-${f.status}`}>{MARK[f.status]}</span>
+                  <span className="queue__body">
+                    <span className="queue__name">{f.id.split("/").pop()}</span>
+                    <span className={`queue__why${top ? ` risk--${top.level}` : ""}`}>
+                      {top ? top.message : f.unitIds.length ? "No risk rules matched" : "No agent edit explains this change"}
+                      {f.risk.length > 1 ? ` (+${f.risk.length - 1} more)` : ""}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
       </section>
       <section className="sec">
         <h2 className="sec__title">Reading the map</h2>
         <div className="legend">
-          <span className="legend__swatch file--added" style={{ border: "2px solid var(--added)" }} />
+          <span className="legend__swatch" style={{ borderColor: "var(--added)", boxShadow: "inset 0 0 0 1px var(--added)" }} />
           <span>Added file</span>
-          <span className="legend__swatch" style={{ border: "1px solid var(--modified)" }} />
+          <span className="legend__swatch" style={{ borderColor: "var(--modified)" }} />
           <span>Modified file</span>
-          <span className="legend__swatch" style={{ border: "1px dashed var(--removed)", background: "var(--removed-soft)" }} />
+          <span className="legend__swatch" style={{ borderStyle: "dashed", borderColor: "var(--removed)", background: "var(--removed-soft)" }} />
           <span>Removed file</span>
-          <span className="legend__swatch" style={{ border: "1px dashed var(--border-strong)", background: "transparent" }} />
-          <span>Unchanged neighbour</span>
+          <span className="legend__swatch" style={{ background: "transparent" }} />
+          <span>Unchanged file that depends on the change</span>
           <span className="legend__edge" />
           <span>New import</span>
-          <span className="legend__edge" style={{ borderTop: "1px dashed var(--removed)" }} />
+          <span className="legend__edge" style={{ borderTop: "1.5px dashed var(--removed)" }} />
           <span>Removed import</span>
+          <span className="legend__steps mono">1 · 4</span>
+          <span>Steps that changed the file</span>
         </div>
         <p className="sec__empty">Arrows point from a file down to what it imports. Grey boxes are top-level folders.</p>
       </section>

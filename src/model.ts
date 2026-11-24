@@ -95,6 +95,10 @@ export interface WakeMap {
   base: { ref: string; sha: string };
   head: { ref: string; sha: string };
   title: string;
+  /** Branch the change came from, when known. */
+  branch?: string;
+  /** Pull request number, when the head is a GitHub merge commit. */
+  pr?: string;
   generatedAt: string;
   areas: AreaNode[];
   files: FileNode[];
