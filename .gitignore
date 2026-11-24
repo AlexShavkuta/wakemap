@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.wake/
+*.log
+.DS_Store
