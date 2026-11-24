@@ -85,5 +85,5 @@ const WEIGHT = { info: 1, warn: 3, high: 8 } as const;
 export function scoreRisk(flags: RiskFlag[], unattributed: number): { score: number; band: "low" | "review" | "expert" } {
   const score = flags.reduce((s, f) => s + WEIGHT[f.level], 0) + unattributed * 2;
   const hardHigh = flags.some((f) => f.rule === "test-deleted" || f.rule === "assertions-removed" || f.rule === "sensitive-path");
-  return { score, band: hardHigh || score >= 16 ? "expert" : score >= 4 ? "review" : "low" };
+  return { score, band: hardHigh || score >= 24 ? "expert" : score >= 4 ? "review" : "low" };
 }

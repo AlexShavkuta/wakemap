@@ -97,12 +97,15 @@ export function analyze(opts: AnalyzeOptions): WakeMap {
   // ---- which files to show: every changed file plus its closest neighbours
   const neighbourScore = new Map<string, number>();
   const bump = (f: string) => !changed.has(f) && neighbourScore.set(f, (neighbourScore.get(f) ?? 0) + 1);
+  // Neighbours worth showing: files that depend on the change (who could break), and files the
+  // change newly started importing. Plain dependencies like shared types and utils are left out.
   for (const [f, st] of changed) {
     const g = st === "removed" ? gBase : gHead;
-    for (const n of g.imports.get(f) ?? []) bump(n);
     for (const n of g.importers.get(f) ?? []) bump(n);
+    const before = gBase.imports.get(renamedFrom.get(f) ?? f) ?? new Set<string>();
+    for (const n of gHead.imports.get(f) ?? []) if (!before.has(n)) bump(n);
   }
-  const limit = opts.contextLimit ?? 24;
+  const limit = opts.contextLimit ?? 8;
   const context = [...neighbourScore].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([f]) => f);
   const visible = new Set([...changed.keys(), ...context]);
 
@@ -298,6 +301,56 @@ export function analyze(opts: AnalyzeOptions): WakeMap {
       const ht = renamedTo.get(t) ?? t;
       if (visible.has(ht) && !headEdges.has(`${hs}->${ht}`)) edges.push({ id: `${hs}->${ht}`, source: hs, target: ht, status: "removed" });
     }
+  }
+
+  // ---- architecture: a new import between two areas that never depended on each other before
+  const areaDeps = new Set<string>();
+  for (const [s, ts] of gBase.imports) for (const t of ts) if (areaOf(s) !== areaOf(t)) areaDeps.add(`${areaOf(s)}->${areaOf(t)}`);
+  for (const e of edges) {
+    if (e.status !== "added") continue;
+    const [sa, ta] = [areaOf(e.source), areaOf(e.target)];
+    if (sa === ta || areaDeps.has(`${sa}->${ta}`)) continue;
+    areaDeps.add(`${sa}->${ta}`);
+    const reverse = [...gBase.imports].some(([s, ts]) => areaOf(s) === ta && [...ts].some((t) => areaOf(t) === sa));
+    const node = files.find((f) => f.id === e.source);
+    node?.risk.push({
+      rule: "new-area-dependency",
+      level: reverse ? "high" : "warn",
+      file: e.source,
+      message: reverse
+        ? `First import from ${sa} into ${ta}, which already depends on ${sa}: a cycle between areas`
+        : `First time ${sa} imports from ${ta} (${e.target.split("/").pop()})`,
+    });
+  }
+
+  // ---- new import cycles: an added edge s -> t where t already reaches s at head but did not at base
+  const reaches = (g: RepoGraph, from: string, to: string) => {
+    const seen = new Set<string>([from]);
+    const stack = [from];
+    while (stack.length) {
+      const f = stack.pop()!;
+      if (f === to) return true;
+      for (const n of g.imports.get(f) ?? []) if (!seen.has(n)) (seen.add(n), stack.push(n));
+    }
+    return false;
+  };
+  const cycleSeen = new Set<string>();
+  for (const e of edges) {
+    if (e.status !== "added" || !reaches(gHead, e.target, e.source)) continue;
+    const pair = [e.source, e.target].sort().join("|");
+    if (cycleSeen.has(pair)) continue;
+    cycleSeen.add(pair);
+    const bs = renamedFrom.get(e.source) ?? e.source;
+    const bt = renamedFrom.get(e.target) ?? e.target;
+    if (gBase.parsed.has(bs) && gBase.parsed.has(bt) && reaches(gBase, bt, bs) && gBase.imports.get(bs)?.has(bt)) continue;
+    files.find((f) => f.id === e.source)?.risk.push({
+      rule: "import-cycle",
+      level: "warn",
+      file: e.source,
+      message: gHead.imports.get(e.target)?.has(e.source)
+        ? `New import cycle: ${e.source.split("/").pop()} and ${e.target.split("/").pop()} import each other`
+        : `New import cycle: ${e.source.split("/").pop()} now imports ${e.target.split("/").pop()}, which already depends on it`,
+    });
   }
 
   // ---- areas

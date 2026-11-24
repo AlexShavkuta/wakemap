@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "viewer", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev:viewer"], "port": 5199 }
+  ]
+}

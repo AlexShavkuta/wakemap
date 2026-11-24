@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import ts from "typescript";
 import { Git } from "./git.ts";
 import { isCodeFile, parseFile, type ParsedFile } from "./parse.ts";
 
@@ -19,8 +20,8 @@ const EXTS = ["", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", "/index.ts", "/i
 function readAliases(tsconfig: string | undefined): [string, string][] {
   if (!tsconfig) return [];
   try {
-    // tsconfig allows comments and trailing commas
-    const json = JSON.parse(tsconfig.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, "").replace(/,(\s*[}\]])/g, "$1"));
+    // tsconfig allows comments and trailing commas; let TypeScript parse it
+    const json = ts.parseConfigFileTextToJson("tsconfig.json", tsconfig).config ?? {};
     const paths: Record<string, string[]> = json.compilerOptions?.paths ?? {};
     const baseUrl: string = json.compilerOptions?.baseUrl ?? ".";
     return Object.entries(paths).map(([k, v]) => [k.replace(/\*$/, ""), posix.normalize(posix.join(baseUrl, v[0].replace(/\*$/, ""))).replace(/^\.\//, "")]);
