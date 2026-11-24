@@ -1,8 +1,8 @@
-# Wake
+# Wakemap
 
 See what your AI agent left behind.
 
-Wake draws your platform as an interactive flowchart (services → modules → files → functions) and overlays the changes an AI coding agent made, why it made them, and how risky they are, so you can review agent work without reading every line of diff.
+Wakemap draws your platform as an interactive flowchart (services → modules → files → functions) and overlays the changes an AI coding agent made, why it made them, and how risky they are, so you can review agent work without reading every line of diff.
 
 ## Principles
 
