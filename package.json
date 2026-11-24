@@ -1,0 +1,32 @@
+{
+  "name": "wakemap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "See what your AI agent left behind: an interactive map of agent code changes and why they were made",
+  "type": "module",
+  "bin": {
+    "wakemap": "./bin/wakemap.mjs"
+  },
+  "scripts": {
+    "wakemap": "tsx src/cli.ts",
+    "dev:viewer": "vite --config viewer/vite.config.ts",
+    "build:viewer": "vite build --config viewer/vite.config.ts",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p viewer",
+    "test": "node --import tsx --test 'test/**/*.test.ts'"
+  },
+  "dependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@xyflow/react": "^13.0.3",
+    "elkjs": "^0.12.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.8"
+  }
+}

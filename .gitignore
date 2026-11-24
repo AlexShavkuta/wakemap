@@ -3,3 +3,4 @@ dist/
 .wakemap/
 *.log
 .DS_Store
+viewer/public/wakemap.json
