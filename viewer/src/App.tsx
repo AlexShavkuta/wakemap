@@ -375,41 +375,76 @@ function Shell({ map }: { map: WakeMap }) {
   );
 }
 
-/** Files changed off the record, grouped by folder so 12 generated JSON files read as one line. */
+/** Keeps the end of a long folder path, where the meaning is: "src/lib/server/benchmarks/frozen" → "…/benchmarks/frozen/". */
+function shortDir(dir: string, keep = 2): string {
+  if (!dir) return "top level";
+  const parts = dir.split("/");
+  return parts.length > keep + 1 ? `…/${parts.slice(-keep).join("/")}/` : `${dir}/`;
+}
+
+/**
+ * Files changed off the record, as a compact tree: the shared prefix is said once, each folder is a
+ * quiet header, and each file is one line with just its name. Big folders start closed.
+ */
 function Unattributed({ files, onPick }: { files: string[]; onPick: (id: string) => void }) {
-  const [open, setOpen] = useState<string | null>(null);
+  const dirOf = (f: string) => (f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "");
+  // shared leading folders ("apps/dashboard/") are stated once instead of on every line
+  const dirs = files.map(dirOf);
+  let prefix = dirs[0] ?? "";
+  for (const d of dirs) while (prefix && !(d === prefix || d.startsWith(prefix + "/"))) prefix = prefix.includes("/") ? prefix.slice(0, prefix.lastIndexOf("/")) : "";
   const groups = new Map<string, string[]>();
-  for (const f of files) {
-    const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "(root)";
-    groups.set(dir, [...(groups.get(dir) ?? []), f]);
+  for (const f of [...files].sort()) {
+    const rel = dirOf(f).slice(prefix.length).replace(/^\//, "");
+    groups.set(rel, [...(groups.get(rel) ?? []), f]);
   }
+  const [open, setOpen] = useState<Set<string>>(() => new Set([...groups].filter(([, fs]) => fs.length <= 3).map(([d]) => d)));
+  const [showAll, setShowAll] = useState(false);
+  const entries = [...groups];
+  const shown = showAll ? entries : entries.slice(0, 6);
+  const toggle = (d: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d);
+      else next.add(d);
+      return next;
+    });
   return (
-    <div className="rail-note">
-      Changed without a recorded agent edit
-      <ul>
-        {[...groups].map(([dir, fs]) =>
-          fs.length === 1 ? (
-            <li key={dir}>
-              <button onClick={() => onPick(fs[0])}>{fs[0]}</button>
-            </li>
-          ) : (
-            <li key={dir}>
-              <button aria-expanded={open === dir} onClick={() => setOpen(open === dir ? null : dir)}>
-                {dir}/ · {fs.length} files
-              </button>
-              {open === dir && (
-                <ul className="rail-note__sub">
-                  {fs.map((f) => (
-                    <li key={f}>
-                      <button onClick={() => onPick(f)}>{f.slice(dir.length + 1)}</button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ),
-        )}
+    <section className="offrecord" aria-label="Changed without a recorded agent edit">
+      <h2 className="offrecord__title">
+        Changed without a recorded agent edit <span className="offrecord__count">{files.length}</span>
+      </h2>
+      {prefix && (
+        <p className="offrecord__prefix mono" title={prefix}>
+          in {shortDir(prefix, 3)}
+        </p>
+      )}
+      <ul className="offrecord__groups">
+        {shown.map(([dir, fs]) => (
+          <li key={dir}>
+            <button className="offrecord__dir" aria-expanded={open.has(dir)} onClick={() => toggle(dir)} title={`${prefix ? prefix + "/" : ""}${dir}`}>
+              <span className="offrecord__chev" aria-hidden="true">{open.has(dir) ? "▾" : "▸"}</span>
+              <span className="offrecord__dirname">{shortDir(dir)}</span>
+              <span className="offrecord__n">{fs.length}</span>
+            </button>
+            {open.has(dir) && (
+              <ul className="offrecord__files">
+                {fs.map((f) => (
+                  <li key={f}>
+                    <button className="offrecord__file" onClick={() => onPick(f)} title={f}>
+                      {f.slice(f.lastIndexOf("/") + 1)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
       </ul>
-    </div>
+      {entries.length > shown.length && (
+        <button className="linkish offrecord__more" onClick={() => setShowAll(true)}>
+          Show {entries.length - shown.length} more folder{entries.length - shown.length === 1 ? "" : "s"}
+        </button>
+      )}
+    </section>
   );
 }
