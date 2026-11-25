@@ -1,8 +1,29 @@
 {
   "name": "wakemap",
   "version": "0.1.0",
-  "private": true,
   "description": "See what your AI agent left behind: an interactive map of agent code changes and why they were made",
+  "keywords": [
+    "ai",
+    "agents",
+    "code-review",
+    "claude-code",
+    "visualization",
+    "diff",
+    "architecture"
+  ],
+  "license": "MIT",
+  "author": "Alex Shavkuta",
+  "homepage": "https://github.com/AlexShavkuta/wakemap#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlexShavkuta/wakemap.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AlexShavkuta/wakemap/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "bin": {
     "wakemap": "./bin/wakemap.mjs"
@@ -12,7 +33,8 @@
     "dev:viewer": "vite --config viewer/vite.config.ts",
     "build:viewer": "vite build --config viewer/vite.config.ts",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p viewer",
-    "test": "node --import tsx --test 'test/**/*.test.ts'"
+    "test": "node --import tsx --test 'test/**/*.test.ts'",
+    "prepublishOnly": "npm run typecheck && npm run build:viewer"
   },
   "dependencies": {
     "tsx": "^4.23.15",
@@ -30,5 +52,12 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "vite": "^8.3.8"
-  }
+  },
+  "files": [
+    "bin",
+    "src",
+    "viewer/dist",
+    "README.md",
+    "LICENSE"
+  ]
 }

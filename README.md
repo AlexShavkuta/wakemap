@@ -24,33 +24,33 @@
 
 ## Quick Start
 
+Run it from npm, inside the repository you want to look at:
+
 ```bash
-git clone https://github.com/AlexShavkuta/wakemap.git && cd wakemap
-npm install
-npm run build:viewer
-./bin/wakemap.mjs analyze --repo ../your-repo --base main --head your-branch --out map.json
-./bin/wakemap.mjs show map.json
+npx wakemap analyze --base main --head your-branch --out map.json
+npx wakemap show map.json
 ```
 
-Then open http://localhost:4173.
+Then open http://localhost:4173. Or install it once with `npm install -g wakemap` and drop the `npx`.
 
 ## Running it locally
 
 ### Requirements
 
-- Node.js and npm (developed on Node 26)
+- Node.js 20 or newer, and npm
 - git
 - A TypeScript or JavaScript repository to analyze
 - Optional: Claude Code sessions for that repository on the same machine (in `~/.claude/projects`). Without them you still get the map and the risk flags, but no "why".
 
-### 1. Install
+### 1. Install from source
 
 ```bash
+git clone https://github.com/AlexShavkuta/wakemap.git && cd wakemap
 npm install
 npm run build:viewer
 ```
 
-`build:viewer` builds the web viewer into `viewer/dist`, which `wakemap show` serves.
+`build:viewer` builds the web viewer into `viewer/dist`, which `wakemap show` serves. From a clone, run the CLI as `./bin/wakemap.mjs`.
 
 ### 2. Analyze a change
 
@@ -112,3 +112,7 @@ Current scope: TypeScript and JavaScript repositories, Claude Code sessions, loc
 
 - [Market research](docs/research/market.md)
 - [Implementation research](docs/research/implementation.md)
+
+## License
+
+[MIT](LICENSE)
